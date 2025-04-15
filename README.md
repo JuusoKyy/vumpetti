@@ -1,2 +1,0 @@
-# vumpetti
-Vumpetti
