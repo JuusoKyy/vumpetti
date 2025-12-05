@@ -103,6 +103,7 @@ function App() {
         });
 
         socket.on("updateHand", (hand) => {
+            const sortedHand = sortHandBySuit(hand);
             setPlayerHand(hand);
             console.log("Hand updated:", hand);
         });
@@ -313,6 +314,22 @@ function App() {
             return;
         }
         socket.emit("playCard", {card});
+    };
+
+
+    const sortHandBySuit = (hand) => {
+        const suitOrder = ['spades', 'hearts', 'diamonds', 'clubs', 'stars', 'crowns', 'joker'];
+
+        return [...hand].sort((a, b) => {
+            // First sort by suit
+            const suitCompare = suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
+            if (suitCompare !== 0) return suitCompare;
+
+            // Then by value within same suit
+            if (a.value === null) return 1; // Jokers last
+            if (b.value === null) return -1;
+            return a.value - b.value;
+        });
     };
 
     const handleSuitRankingUpdate = (action, data) => {
@@ -1012,7 +1029,8 @@ function App() {
             }}>
                 {isMyTurn ? "🎯 YOUR TURN" : `⏳ ${players.find(p => p.id === currentPlayer)?.name || 'Player'}'s turn`}
                 {leadSuit && (
-                    <div style={{marginTop: '10px', fontSize: '14px', borderTop: '1px solid white', paddingTop: '10px'}}>
+                    <div
+                        style={{marginTop: '10px', fontSize: '14px', borderTop: '1px solid white', paddingTop: '10px'}}>
                         Lead: {leadSuit}
                     </div>
                 )}
@@ -1223,14 +1241,33 @@ function App() {
                                         borderRadius: '5px',
                                         border: '2px solid #333'
                                     }}>
-                                        {suitRanking.map(suit => {
+                                        {suitRanking.map((suit, index) => {
                                             const suitSymbols = {
                                                 'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
                                                 'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
                                             };
                                             return (
                                                 <option key={suit} value={suit}>
-                                                    {suitSymbols[suit]} {suit}
+                                                    {index + 1}. {suitSymbols[suit]} {suit}
+                                                </option>
+                                            );
+                                        })}
+                                    </select>
+                                    <span style={{fontSize: '32px', fontWeight: 'bold'}}>↔</span>
+                                    <select id="suit1" style={{
+                                        padding: '15px',
+                                        fontSize: '18px',
+                                        borderRadius: '5px',
+                                        border: '2px solid #333'
+                                    }}>
+                                        {suitRanking.map((suit, index) => {
+                                            const suitSymbols = {
+                                                'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
+                                                'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
+                                            };
+                                            return (
+                                                <option key={suit} value={suit}>
+                                                    {index + 1}. {suitSymbols[suit]} {suit}
                                                 </option>
                                             );
                                         })}
@@ -1242,14 +1279,14 @@ function App() {
                                         borderRadius: '5px',
                                         border: '2px solid #333'
                                     }}>
-                                        {suitRanking.map(suit => {
+                                        {suitRanking.map((suit, index) => {
                                             const suitSymbols = {
                                                 'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
                                                 'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
                                             };
                                             return (
                                                 <option key={suit} value={suit}>
-                                                    {suitSymbols[suit]} {suit}
+                                                    {index + 1}. {suitSymbols[suit]} {suit}
                                                 </option>
                                             );
                                         })}
@@ -1278,6 +1315,59 @@ function App() {
                     </div>
                 </div>
             )}
+            <div style={{
+                position: 'absolute',
+                top: '50%',
+                right: '20px',
+                transform: 'translateY(-50%)',
+                width: '250px',
+                maxHeight: '80vh',
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                border: '3px solid #333',
+                borderRadius: '15px',
+                padding: '15px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                zIndex: 100,
+                display: 'flex',
+                flexDirection: 'column'
+            }}>
+                <h3 style={{
+                    margin: '0 0 15px 0',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    borderBottom: '2px solid #333',
+                    paddingBottom: '10px'
+                }}>
+                    Game Log
+                </h3>
+                <div style={{
+                    overflowY: 'auto',
+                    flex: 1,
+                    fontSize: '14px'
+                }}>
+                    {gameLog.map((entry, index) => (
+                        <div key={index} style={{
+                            marginBottom: '8px',
+                            padding: '5px',
+                            backgroundColor: entry.includes('🏆') ? '#d4edda' :
+                                entry.includes('🎉') ? '#fff3cd' :
+                                    entry.includes('New deck') ? '#d1ecf1' :
+                                        entry.includes('Swapped') || entry.includes('Added') ? '#f8d7da' :
+                                            'transparent',
+                            borderRadius: '5px',
+                            borderLeft: entry.includes('🏆') ? '3px solid #28a745' :
+                                entry.includes('🎉') ? '3px solid #ffc107' :
+                                    entry.includes('New deck') ? '3px solid #17a2b8' :
+                                        entry.includes('Swapped') || entry.includes('Added') ? '3px solid #dc3545' :
+                                            'none',
+                            paddingLeft: '8px'
+                        }}>
+                            {entry}
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }
