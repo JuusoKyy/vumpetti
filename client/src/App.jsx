@@ -1293,25 +1293,6 @@ function App() {
                                         })}
                                     </select>
                                     <span style={{fontSize: '32px', fontWeight: 'bold'}}>↔</span>
-                                    <select id="suit1" style={{
-                                        padding: '15px',
-                                        fontSize: '18px',
-                                        borderRadius: '5px',
-                                        border: '2px solid #333'
-                                    }}>
-                                        {suitRanking.map((suit, index) => {
-                                            const suitSymbols = {
-                                                'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
-                                                'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
-                                            };
-                                            return (
-                                                <option key={suit} value={suit}>
-                                                    {index + 1}. {suitSymbols[suit]} {suit}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
-                                    <span style={{fontSize: '32px', fontWeight: 'bold'}}>↔</span>
                                     <select id="suit2" style={{
                                         padding: '15px',
                                         fontSize: '18px',
