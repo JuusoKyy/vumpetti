@@ -95,7 +95,7 @@ function dealCardsFromDeck(room, numCards = 7) {
 function findNextAvailablePosition(currentPosition, allPlayers, playerId) {
     const occupiedPositions = new Set(
         allPlayers
-            .filter(p => p.id !== playerId) // Exclude the moving player
+            .filter(p => p.id !== playerId)
             .map(p => p.position)
     );
 
@@ -106,30 +106,24 @@ function findNextAvailablePosition(currentPosition, allPlayers, playerId) {
         nextPosition++;
     }
 
-    return Math.min(nextPosition, 24); // Cap at 24 (end of board)
+    return Math.min(nextPosition, 24);
 }
 
 // Helper function to check if a suit can beat the lead suit
 function canBeatLeadSuit(suit, leadSuit, suitRanking) {
-    // If no suit ranking exists, only lead suit wins (and jokers, but those are handled separately)
-    if (suitRanking.length === 0) {
-        return false;
-    }
+    // If no ranking exists, no suit can beat lead suit
+    if (suitRanking.length === 0) return false;
 
     const suitIndex = suitRanking.indexOf(suit);
     const leadSuitIndex = suitRanking.indexOf(leadSuit);
 
-    // If the suit is not in ranking, it cannot beat lead suit
-    if (suitIndex === -1) {
-        return false;
-    }
+    // If the played suit is not in ranking, it cannot beat lead suit
+    if (suitIndex === -1) return false;
 
     // If lead suit is not in ranking, any ranked suit beats it
-    if (leadSuitIndex === -1) {
-        return true;
-    }
+    if (leadSuitIndex === -1) return true;
 
-    // Both are in ranking - lower index (higher rank) wins
+    // Lower index = higher rank, so can only beat if index is lower
     return suitIndex < leadSuitIndex;
 }
 
@@ -140,8 +134,8 @@ function compareCardsByRankingAndValue(card1, card2, suitRanking) {
 
     // Both suits are in ranking
     if (suit1Index !== -1 && suit2Index !== -1) {
-        if (suit1Index < suit2Index) return 1; // card1 has higher rank
-        if (suit1Index > suit2Index) return -1; // card2 has higher rank
+        if (suit1Index < suit2Index) return 1;
+        if (suit1Index > suit2Index) return -1;
         // Same suit rank, compare by value
         if (card1.value > card2.value) return 1;
         if (card1.value < card2.value) return -1;
@@ -164,17 +158,17 @@ function compareCardsByRankingAndValue(card1, card2, suitRanking) {
     return 0;
 }
 
-// Compare cards to determine winner - FIXED LOGIC with joker timing
+// Compare cards to determine winner - CORRECTED LOGIC
 function compareCards(card1, card2, suitRanking, leadSuit, card1Index, card2Index) {
     // Handle jokers - jokers always win, but latest joker wins among jokers
     if (card1.suit === 'joker' && card2.suit === 'joker') {
         // Later played joker wins (higher index = played later)
-        if (card2Index > card1Index) return -1; // card2 (later) wins
-        if (card1Index > card2Index) return 1;  // card1 (later) wins
+        if (card2Index > card1Index) return -1;
+        if (card1Index > card2Index) return 1;
         return 0; // Same timing (shouldn't happen)
     }
-    if (card1.suit === 'joker') return 1; // card1 wins
-    if (card2.suit === 'joker') return -1; // card2 wins
+    if (card1.suit === 'joker') return 1;
+    if (card2.suit === 'joker') return -1;
 
     // If no lead suit is set, compare normally
     if (!leadSuit) {
@@ -185,27 +179,29 @@ function compareCards(card1, card2, suitRanking, leadSuit, card1Index, card2Inde
     const card1FollowsLead = card1.suit === leadSuit;
     const card2FollowsLead = card2.suit === leadSuit;
 
-    // If both follow lead suit, compare by value
+    // If both follow lead suit, compare by value (higher value wins)
     if (card1FollowsLead && card2FollowsLead) {
         if (card1.value > card2.value) return 1;
         if (card1.value < card2.value) return -1;
         return 0;
     }
 
-    // If only one follows lead suit
+    // If only card1 follows lead suit
     if (card1FollowsLead && !card2FollowsLead) {
         // card1 follows lead, card2 doesn't
-        // card2 can only win if it's a higher-ranked suit
+        // card2 can only win if it's from a HIGHER-ranked suit than lead suit
         return canBeatLeadSuit(card2.suit, leadSuit, suitRanking) ? -1 : 1;
     }
 
+    // If only card2 follows lead suit
     if (!card1FollowsLead && card2FollowsLead) {
         // card2 follows lead, card1 doesn't
-        // card1 can only win if it's a higher-ranked suit
+        // card1 can only win if it's from a HIGHER-ranked suit than lead suit
         return canBeatLeadSuit(card1.suit, leadSuit, suitRanking) ? 1 : -1;
     }
 
-    // Neither follows lead suit - compare by ranking and value
+    // Neither follows lead suit - both are "discarding"
+    // Compare by ranking and value, but neither should beat a lead suit card
     return compareCardsByRankingAndValue(card1, card2, suitRanking);
 }
 
@@ -225,6 +221,11 @@ function findRoundWinner(cardsPlayed, suitRanking, leadSuit) {
     }
 
     return winner.playerId;
+}
+
+// Check if player in green zone
+function isInGreenZone(position) {
+    return position >= 19 && position <= 25;
 }
 
 // Check if player can play a specific card (CORRECTED LOGIC)
@@ -249,7 +250,7 @@ function canPlayCard(card, leadSuit, playerHand) {
 
 // Get valid cards for a player (CORRECTED LOGIC)
 function getValidCards(playerHand, leadSuit) {
-    if (!leadSuit) return playerHand; // First player can play any card
+    if (!leadSuit) return playerHand;
 
     // Check if player has cards of the lead suit (excluding jokers)
     const hasLeadSuit = playerHand.some(c => c.suit === leadSuit);
@@ -342,7 +343,7 @@ function processNextTurn(room) {
     }
 }
 
-// Process round end - UPDATED
+// Process round end
 function processRoundEnd(room) {
     console.log(`[0] Processing round end for room: ${room.id}`);
 
@@ -357,9 +358,34 @@ function processRoundEnd(room) {
             const newPosition = findNextAvailablePosition(winner.position, room.players, winnerId);
             winner.position = newPosition;
             console.log(`[0] Player ${winner.name} moved to position ${newPosition}`);
+
+            // Check if winner landed in green zone (positions 19-25)
+            if (isInGreenZone(newPosition)) {
+                const otherGreenZonePlayers = room.players.filter(p =>
+                    p.id !== winnerId && isInGreenZone(p.position)
+                );
+
+                if (otherGreenZonePlayers.length > 0) {
+                    // Emit movement choice to winner
+                    io.to(winnerId).emit("movementChoice", {
+                        greenZonePlayers: otherGreenZonePlayers
+                    });
+
+                    // Emit round result first
+                    room.players.forEach(player => {
+                        io.to(player.id).emit("roundResult", {
+                            cards: room.cardsPlayed,
+                            winnerId: winnerId,
+                            playerPositions: room.players
+                        });
+                    });
+                    return; // Wait for movement choice
+                }
+            }
         }
     }
 
+    // Continue with normal round end processing...
     // Emit round result
     room.players.forEach(player => {
         io.to(player.id).emit("roundResult", {
@@ -370,7 +396,7 @@ function processRoundEnd(room) {
     });
 
     // Check for game end
-    const gameWinner = room.players.find(p => p.position >= 24);
+    const gameWinner = room.players.find(p => p.position >= 25);
     if (gameWinner) {
         room.players.forEach(player => {
             io.to(player.id).emit("gameWon", {
@@ -405,7 +431,7 @@ function processRoundEnd(room) {
                     position: winner.position,
                     canAddSuit: canAddSuit
                 });
-                return; // Wait for pick step completion
+                return;
             }
         }
     } else {
@@ -418,7 +444,7 @@ function processRoundEnd(room) {
                     position: winner.position,
                     canAddSuit: canAddSuit
                 });
-                return; // Wait for pick step completion
+                return;
             }
         }
     }
@@ -436,7 +462,7 @@ io.on("connection", (socket) => {
     // Generate initial username and assign random color
     const animalNames = ['Fox', 'Wolf', 'Bear', 'Eagle', 'Lion', 'Tiger', 'Shark', 'Hawk'];
     const adjectives = ['Sharp', 'Swift', 'Bold', 'Fierce', 'Brave', 'Quick', 'Strong', 'Wild'];
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+    const colors = ['#000000', '#FF0000', '#0000FF', '#FFFF00', '#FFFFFF', '#008000'];
 
     const randomAnimal = animalNames[Math.floor(Math.random() * animalNames.length)];
     const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
@@ -449,7 +475,8 @@ io.on("connection", (socket) => {
         name: initialUsername,
         position: 0,
         hand: [],
-        color: randomColor
+        color: null,
+        colorSelected: false
     });
 
     socket.emit("initialUsername", initialUsername);
@@ -486,6 +513,11 @@ io.on("connection", (socket) => {
         const roomId = generateRoomId();
         const player = players.get(socket.id);
 
+        const playerWithColorStatus = {
+            ...player,
+            colorSelected: false
+        };
+
         const room = {
             id: roomId,
             players: [player],
@@ -498,8 +530,8 @@ io.on("connection", (socket) => {
             currentTurnIndex: 0,
             currentPlayerId: null,
             lastRoundWinner: null,
-            currentDeck: null, // Track the current deck
-            isNewShuffle: false // Track if we just created a new deck
+            currentDeck: null,
+            isNewShuffle: false
         };
 
         rooms.set(roomId, room);
@@ -524,7 +556,12 @@ io.on("connection", (socket) => {
 
         const player = players.get(socket.id);
         if (!room.players.find(p => p.id === socket.id)) {
-            room.players.push(player);
+            // Ensure player has colorSelected property
+            const playerWithColorStatus = {
+                ...player,
+                colorSelected: false
+            };
+            room.players.push(playerWithColorStatus);
         }
 
         // Emit to all players in room
@@ -534,7 +571,7 @@ io.on("connection", (socket) => {
         console.log(`[0] Player joined lobby: ${lobbyId}`);
     });
 
-    // Handle game start - UPDATED
+    // Handle game start
     socket.on("startGame", () => {
         console.log(`[0] Start game requested by: ${socket.id}`);
 
@@ -552,10 +589,17 @@ io.on("connection", (socket) => {
             return;
         }
 
+        // Randomize player order and assign table positions
+        const shuffledPlayers = shuffle([...currentRoom.players]);
+        shuffledPlayers.forEach((player, index) => {
+            player.tablePosition = index; // Assign table positions 0-4
+        });
+        currentRoom.players = shuffledPlayers;
+
         // Start the game
         currentRoom.gameState = 'playing';
         currentRoom.currentRound = 1;
-        currentRoom.currentDeck = null; // Initialize deck as null
+        currentRoom.currentDeck = null;
 
         // Deal initial hands
         const hands = dealCardsFromDeck(currentRoom, 7);
@@ -581,6 +625,69 @@ io.on("connection", (socket) => {
             startRound(currentRoom);
         }, 1000);
     });
+
+    socket.on("selectColor", (selectedColor) => {
+        console.log(`\n[SERVER] ===== COLOR SELECTION START =====`);
+        console.log(`[SERVER] Player ${socket.id} wants color: ${selectedColor}`);
+        console.log(`[SERVER] Socket connected: ${socket.connected}`);
+
+        // FIX: Use .get() for Map, not .find()
+        const player = players.get(socket.id);
+        console.log(`[SERVER] Found player:`, player);
+
+        if (!player) {
+            console.log(`[SERVER] ERROR: Player not found!`);
+            socket.emit("colorError", "Player not found");
+            return;
+        }
+
+        // FIX: Check if color is taken by iterating through Map values
+        const colorTaken = Array.from(players.values()).some(p =>
+            p.color === selectedColor && p.id !== socket.id
+        );
+        console.log(`[SERVER] Color ${selectedColor} taken by another player:`, colorTaken);
+
+        if (colorTaken) {
+            console.log(`[SERVER] Sending colorError: Color already taken`);
+            socket.emit("colorError", "Color already taken");
+            return;
+        }
+
+        // Update player color
+        player.color = selectedColor;
+        player.colorSelected = true;
+        players.set(socket.id, player); // Update the Map
+
+        console.log(`[SERVER] Updated player:`, player);
+        console.log(`[SERVER] About to emit colorSelected event to ${socket.id}`);
+
+        // Emit success
+        socket.emit("colorSelected", selectedColor);
+        console.log(`[SERVER] colorSelected event emitted`);
+
+        // Update the room this player is in
+        for (const [roomId, room] of rooms.entries()) {
+            if (room.players.some(p => p.id === socket.id)) {
+                // Update the player in the room's player list
+                const roomPlayerIndex = room.players.findIndex(p => p.id === socket.id);
+                if (roomPlayerIndex !== -1) {
+                    room.players[roomPlayerIndex] = player;
+
+                    // Broadcast updated player list to all players in this room
+                    room.players.forEach(roomPlayer => {
+                        io.to(roomPlayer.id).emit("lobbyJoined", {
+                            lobbyId: roomId,
+                            players: room.players
+                        });
+                    });
+                }
+                break;
+            }
+        }
+
+        console.log(`[SERVER] ===== COLOR SELECTION END =====\n`);
+    });
+
 
 
     // Handle card playing
@@ -728,6 +835,55 @@ io.on("connection", (socket) => {
             currentRoom.currentRound += 1;
             startRound(currentRoom);
         }, 1000);
+    });
+
+    // Movement choice handler
+    socket.on("movementChoice", ({choice, targetPlayerId}) => {
+        console.log(`[0] Movement choice: ${choice} by ${socket.id}, target: ${targetPlayerId}`);
+
+        // Find the room this player is in
+        let currentRoom = null;
+        for (const [roomId, room] of rooms.entries()) {
+            if (room.players.some(p => p.id === socket.id)) {
+                currentRoom = room;
+                break;
+            }
+        }
+
+        if (!currentRoom) return;
+
+        const movingPlayer = currentRoom.players.find(p => p.id === socket.id);
+        if (!movingPlayer) return;
+
+        if (choice === 'forward') {
+            // Move the player forward one more space
+            const newPosition = findNextAvailablePosition(movingPlayer.position, currentRoom.players, socket.id);
+            movingPlayer.position = Math.min(newPosition, 25);
+        } else if (choice === 'pullback' && targetPlayerId) {
+            // Pull the target player back one space (but not below position 1)
+            const targetPlayer = currentRoom.players.find(p => p.id === targetPlayerId);
+            if (targetPlayer && targetPlayer.position > 1) {
+                targetPlayer.position = Math.max(1, targetPlayer.position - 1);
+            }
+        }
+
+        // Update all players with new positions
+        currentRoom.players.forEach(player => {
+            io.to(player.id).emit("updatePlayerList", currentRoom.players);
+        });
+
+        // Check if the moving player is now on a pick step
+        if (isOnPickStep(movingPlayer.position)) {
+            const canAddSuit = currentRoom.suitRanking.length < 6;
+            io.to(socket.id).emit("pickStep", {
+                position: movingPlayer.position,
+                canAddSuit: canAddSuit
+            });
+            return; // Wait for pick step completion
+        }
+
+        // Continue with game flow
+        continueAfterMovement(currentRoom);
     });
 
     // Handle disconnection

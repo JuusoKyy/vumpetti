@@ -2,7 +2,7 @@ import React, {useEffect, useState} from "react";
 import socket from "./socket";
 
 function App() {
-    const [gameState, setGameState] = useState('menu'); // 'menu', 'lobby', 'game'
+    const [gameState, setGameState] = useState('menu');
     const [playerHand, setPlayerHand] = useState([]);
     const [gameLog, setGameLog] = useState([]);
     const [playerId, setPlayerId] = useState(null);
@@ -20,39 +20,61 @@ function App() {
     const [leadSuit, setLeadSuit] = useState(null);
     const [turnOrder, setTurnOrder] = useState([]);
     const [cardsPlayedThisRound, setCardsPlayedThisRound] = useState([]);
+    const [showMovementChoice, setShowMovementChoice] = useState(false);
+    const [movementChoiceData, setMovementChoiceData] = useState(null);
+    const [availableColors] = useState(['#000000', '#FF0000', '#0000FF', '#FFFF00', '#FFFFFF', '#008000']);
+    const [showColorSelection, setShowColorSelection] = useState(false);
+    const [selectedColor, setSelectedColor] = useState(null);
 
     useEffect(() => {
-        // Get initial username
+        socket.on("connect", () => {
+            setPlayerId(socket.id);
+            console.log("Connected with ID:", socket.id);
+        });
+
         socket.on("initialUsername", (name) => {
             setUsername(name);
             setTempUsername(name);
         });
 
-        // Handle lobby creation
         socket.on("lobbyCreated", ({lobbyId, players}) => {
             setLobbyId(lobbyId);
             setPlayers(players);
             setGameState('lobby');
+            const currentPlayer = players.find(p => p.id === socket.id);
+            if (currentPlayer && !currentPlayer.colorSelected) {
+                setShowColorSelection(true);
+            }
         });
 
-        // Handle lobby joining
         socket.on("lobbyJoined", ({lobbyId, players}) => {
             setLobbyId(lobbyId);
             setPlayers(players);
             setGameState('lobby');
+            const currentPlayer = players.find(p => p.id === socket.id);
+            if (currentPlayer && !currentPlayer.colorSelected) {
+                setShowColorSelection(true);
+            }
         });
 
-        // Handle lobby errors
         socket.on("lobbyError", (message) => {
             alert(message);
         });
 
-        // Listen for updated player list
         socket.on("updatePlayerList", (playersWithData) => {
+            console.log("Received updated player list:", playersWithData);
             setPlayers(playersWithData);
+            const currentPlayer = playersWithData.find(p => p.id === socket.id);
+            console.log("Current player after update:", currentPlayer);
+            if (currentPlayer && !currentPlayer.colorSelected && gameState === 'lobby') {
+                console.log("Player still needs to select color, keeping modal open");
+                setShowColorSelection(true);
+            } else if (currentPlayer && currentPlayer.colorSelected) {
+                console.log("Player has selected color, closing modal");
+                setShowColorSelection(false);
+            }
         });
 
-        // Listen for game start
         socket.on("gameStart", (data) => {
             setGameState('game');
             setSuitRanking(data.suitRanking);
@@ -60,18 +82,16 @@ function App() {
             setGameLog(prev => [...prev, "Game started!"]);
         });
 
-        // Listen for round start
         socket.on("roundStart", (data) => {
             setIsMyTurn(data.isYourTurn);
             setCurrentPlayer(data.currentPlayer);
             setValidCards(data.validCards || []);
             setTurnOrder(data.turnOrder || []);
             setLeadSuit(null);
-            setCardsPlayedThisRound([]); // Clear cards played for new round
+            setCardsPlayedThisRound([]);
             setGameLog(prev => [...prev, data.message]);
         });
 
-        // Listen for turn updates
         socket.on("turnUpdate", (data) => {
             setIsMyTurn(data.isYourTurn);
             setCurrentPlayer(data.currentPlayer);
@@ -79,38 +99,47 @@ function App() {
             setLeadSuit(data.leadSuit);
         });
 
-        // Listen for hand updates
         socket.on("updateHand", (hand) => {
             setPlayerHand(hand);
             console.log("Hand updated:", hand);
         });
 
-        // Handle pick steps
         socket.on("pickStep", (data) => {
             setPickStepData(data);
             setShowPickStep(true);
         });
 
-        // Handle suit ranking updates
+        socket.on("movementChoice", (data) => {
+            setMovementChoiceData(data);
+            setShowMovementChoice(true);
+        });
+
         socket.on("suitRankingUpdated", (ranking) => {
             setSuitRanking(ranking);
         });
 
-        // Get the player ID when connected
-        socket.on("connect", () => {
-            setPlayerId(socket.id);
-            console.log("Connected with ID:", socket.id);
-        });
-
-        // Handle new hands dealt
         socket.on("newHandsDealt", () => {
             setGameLog(prev => [...prev, "New hands dealt!"]);
         });
 
-        // Handle game won
         socket.on("gameWon", ({winnerId, winnerName}) => {
             setGameLog(prev => [...prev, `🎉 ${winnerName} wins the game! 🎉`]);
             setIsMyTurn(false);
+        });
+
+        socket.on("colorSelected", (color) => {
+            console.log("🎉 [CLIENT] colorSelected event received:", color);
+            setSelectedColor(color);
+            setShowColorSelection(false);
+        });
+
+        socket.on("colorError", (message) => {
+            console.log("❌ [CLIENT] colorError event received:", message);
+            alert(message);
+        });
+
+        socket.onAny((eventName, ...args) => {
+            console.log(`[CLIENT] Received event: ${eventName}`, args);
         });
 
         return () => {
@@ -124,20 +153,21 @@ function App() {
             socket.off("turnUpdate");
             socket.off("updateHand");
             socket.off("pickStep");
+            socket.off("movementChoice");
             socket.off("suitRankingUpdated");
             socket.off("connect");
             socket.off("newHandsDealt");
             socket.off("gameWon");
+            socket.off("colorSelected");
+            socket.off("colorError");
         };
     }, []);
 
     useEffect(() => {
-        // Listen for card played events to update the game log and cards played
         socket.on("cardPlayed", ({playerId, card, leadSuit}) => {
             const player = players.find(p => p.id === playerId);
             const playerName = player ? player.name : playerId;
 
-            // Add to cards played this round
             setCardsPlayedThisRound(prev => [...prev, {
                 playerId,
                 playerName,
@@ -152,12 +182,9 @@ function App() {
             setLeadSuit(leadSuit);
         });
 
-        // Handle round results
         socket.on("roundResult", ({cards, winnerId, playerPositions}) => {
             setIsMyTurn(false);
-
             const logs = [...gameLog];
-
             if (winnerId) {
                 const winner = players.find(p => p.id === winnerId);
                 const winnerName = winner ? winner.name : winnerId;
@@ -165,11 +192,8 @@ function App() {
             } else {
                 logs.push("The round is a tie!");
             }
-
             setGameLog(logs);
             setPlayers(playerPositions);
-
-            // Keep cards visible for a moment before clearing
             setTimeout(() => {
                 setCardsPlayedThisRound([]);
             }, 3000);
@@ -180,6 +204,76 @@ function App() {
             socket.off("roundResult");
         };
     }, [gameLog, players]);
+
+    const selectColor = (color) => {
+        console.log("Selecting color:", color);
+        socket.emit("selectColor", color);
+    };
+
+    const ColorSelectionModal = () => {
+        if (!showColorSelection) return null;
+        const takenColors = players.map(p => p.color).filter(Boolean);
+        const availableColorsFiltered = availableColors.filter(color => !takenColors.includes(color));
+
+        return (
+            <div style={{
+                position: 'fixed',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000
+            }}>
+                <div style={{
+                    background: 'white',
+                    border: '3px solid #333',
+                    borderRadius: '15px',
+                    padding: '30px',
+                    maxWidth: '500px',
+                    textAlign: 'center',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+                }}>
+                    <h2 style={{marginBottom: '20px', color: '#333'}}>🎨 Choose Your Color</h2>
+                    <p style={{marginBottom: '25px', color: '#666'}}>
+                        Select a color to represent you in the game.
+                    </p>
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(4, 1fr)',
+                        gap: '15px',
+                        marginBottom: '20px'
+                    }}>
+                        {availableColorsFiltered.map(color => (
+                            <button
+                                key={color}
+                                onClick={() => selectColor(color)}
+                                style={{
+                                    width: '60px',
+                                    height: '60px',
+                                    borderRadius: '50%',
+                                    backgroundColor: color,
+                                    border: '3px solid #333',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.target.style.transform = 'scale(1.1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.target.style.transform = 'scale(1)';
+                                }}
+                            />
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const createLobby = () => {
         socket.emit("createLobby");
@@ -203,24 +297,17 @@ function App() {
     };
 
     const playCard = (card) => {
-        console.log("Attempting to play card:", card);
-        console.log("Is my turn:", isMyTurn);
-
         if (!isMyTurn) {
             alert("It's not your turn!");
             return;
         }
-
-        // Check if card is valid
         const isValidCard = validCards.some(c =>
             c.suit === card.suit && c.value === card.value
         );
-
         if (!isValidCard) {
             alert("You cannot play this card!");
             return;
         }
-
         socket.emit("playCard", {card});
     };
 
@@ -229,428 +316,478 @@ function App() {
         setShowPickStep(false);
     };
 
-    // Helper function to determine suit following message
-    const getSuitFollowingMessage = () => {
-        if (!leadSuit || !isMyTurn) return "";
-
-        const hasLeadSuit = playerHand.some(c => c.suit === leadSuit);
-
-        if (hasLeadSuit) {
-            return `You must follow suit (${leadSuit}) or play a joker`;
-        } else {
-            return `You don't have ${leadSuit} cards - you can play any card`;
-        }
+    const handleMovementChoice = (choice, targetPlayerId = null) => {
+        socket.emit("movementChoice", {choice, targetPlayerId});
+        setShowMovementChoice(false);
     };
 
-    // Helper function to determine winning card - CORRECTED with joker timing
-    const getWinningCard = () => {
-        if (cardsPlayedThisRound.length === 0) return null;
+    // Helper function to get relative player positions for game screen
+    const getRelativePlayerPositions = () => {
+        if (!playerId || players.length === 0) return [];
+        const myIndex = players.findIndex(p => p.id === playerId);
+        if (myIndex === -1) return [];
 
-        // Helper function to compare cards (matching server logic)
-        const compareCards = (card1, card2, suitRanking, leadSuit, card1Index, card2Index) => {
-            // Handle jokers - latest joker wins
-            if (card1.suit === 'joker' && card2.suit === 'joker') {
-                // Later played joker wins (higher index = played later)
-                if (card2Index > card1Index) return -1; // card2 (later) wins
-                if (card1Index > card2Index) return 1;  // card1 (later) wins
-                return 0; // Same timing (shouldn't happen)
-            }
-            if (card1.suit === 'joker') return 1;
-            if (card2.suit === 'joker') return -1;
+        const positions = [];
+        const totalPlayers = players.length;
 
-            if (!leadSuit) {
-                return compareCardsByRankingAndValue(card1, card2, suitRanking);
-            }
-
-            const card1FollowsLead = card1.suit === leadSuit;
-            const card2FollowsLead = card2.suit === leadSuit;
-
-            if (card1FollowsLead && card2FollowsLead) {
-                if (card1.value > card2.value) return 1;
-                if (card1.value < card2.value) return -1;
-                return 0;
-            }
-
-            if (card1FollowsLead && !card2FollowsLead) {
-                return canBeatLeadSuit(card2.suit, leadSuit, suitRanking) ? -1 : 1;
-            }
-
-            if (!card1FollowsLead && card2FollowsLead) {
-                return canBeatLeadSuit(card1.suit, leadSuit, suitRanking) ? 1 : -1;
-            }
-
-            return compareCardsByRankingAndValue(card1, card2, suitRanking);
+        // Position layouts - all in corners, away from game board
+        const positionLayouts = {
+            2: [
+                {top: '20px', left: '20px'}, // Top left
+            ],
+            3: [
+                {top: '20px', left: '20px'}, // Top left
+                {top: '20px', right: '20px'}, // Top right
+            ],
+            4: [
+                {top: '20px', left: '20px'}, // Top left
+                {top: '20px', right: '20px'}, // Top right
+                {bottom: '220px', left: '20px'}, // Bottom left
+            ],
+            5: [
+                {top: '20px', left: '20px'}, // Top left
+                {top: '20px', right: '20px'}, // Top right
+                {bottom: '220px', left: '20px'}, // Bottom left
+                {bottom: '220px', right: '20px'}, // Bottom right
+            ]
         };
 
-        const canBeatLeadSuit = (suit, leadSuit, suitRanking) => {
-            if (suitRanking.length === 0) return false;
+        const layout = positionLayouts[totalPlayers] || positionLayouts[5];
 
-            const suitIndex = suitRanking.indexOf(suit);
-            const leadSuitIndex = suitRanking.indexOf(leadSuit);
-
-            if (suitIndex === -1) return false;
-            if (leadSuitIndex === -1) return true;
-
-            return suitIndex < leadSuitIndex;
-        };
-
-        const compareCardsByRankingAndValue = (card1, card2, suitRanking) => {
-            const suit1Index = suitRanking.indexOf(card1.suit);
-            const suit2Index = suitRanking.indexOf(card2.suit);
-
-            if (suit1Index !== -1 && suit2Index !== -1) {
-                if (suit1Index < suit2Index) return 1;
-                if (suit1Index > suit2Index) return -1;
-                if (card1.value > card2.value) return 1;
-                if (card1.value < card2.value) return -1;
-                return 0;
-            }
-
-            if (suit1Index !== -1 && suit2Index === -1) return 1;
-            if (suit1Index === -1 && suit2Index !== -1) return -1;
-
-            if (card1.value > card2.value) return 1;
-            if (card1.value < card2.value) return -1;
-            return 0;
-        };
-
-        let winningCard = cardsPlayedThisRound[0];
-        let winnerIndex = 0;
-
-        for (let i = 1; i < cardsPlayedThisRound.length; i++) {
-            const currentCard = cardsPlayedThisRound[i];
-            // Pass indices for joker timing comparison
-            if (compareCards(currentCard.card, winningCard.card, suitRanking, leadSuit, i, winnerIndex) > 0) {
-                winningCard = currentCard;
-                winnerIndex = i;
-            }
+        for (let i = 1; i < totalPlayers; i++) {
+            const playerIndex = (myIndex + i) % totalPlayers;
+            positions.push({
+                player: players[playerIndex],
+                position: layout[i - 1]
+            });
         }
 
-        return winningCard;
+        return positions;
     };
-    // Card Component
-    const CardComponent = ({card, isFirst, isWinning, playerName, order}) => {
+
+    // Card Component for game screen
+    const CardComponent = ({card, size = 'large', isClickable = false, onClick, isInHand = false}) => {
         const suitSymbols = {
-            'spades': '♠',
-            'hearts': '♥',
-            'diamonds': '♦',
-            'clubs': '♣',
-            'stars': '⭐',
-            'crowns': '👑',
-            'joker': '🃏'
+            'spades': '♠', 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣',
+            'stars': '⭐', 'crowns': '👑', 'joker': '🃏'
         };
-
         const suitColors = {
-            'spades': '#000000',
-            'hearts': '#FF0000',
-            'diamonds': '#FF0000',
-            'clubs': '#000000',
-            'stars': '#FFD700',
-            'crowns': '#800080',
-            'joker': '#FF6B6B'
+            'spades': '#000000', 'hearts': '#FF0000', 'diamonds': '#FF0000',
+            'clubs': '#000000', 'stars': '#FFD700', 'crowns': '#800080', 'joker': '#FF6B6B'
+        };
+        const sizes = {
+            small: {width: '60px', height: '85px', fontSize: '14px'},
+            medium: {width: '100px', height: '140px', fontSize: '18px'},
+            large: {width: '120px', height: '170px', fontSize: '22px'}
         };
 
-        let borderColor = '#333';
-        let backgroundColor = '#ffffff';
-        let borderWidth = '2px';
-
-        if (isFirst) {
-            borderColor = '#007bff';
-            backgroundColor = '#e3f2fd';
-            borderWidth = '3px';
-        }
-
-        if (isWinning) {
-            borderColor = '#28a745';
-            backgroundColor = '#d4edda';
-            borderWidth = '3px';
-        }
+        const isValidCard = isClickable && validCards.some(c =>
+            c.suit === card.suit && c.value === card.value
+        );
 
         return (
-            <div style={{
-                width: '80px',
-                height: '110px',
-                border: `${borderWidth} solid ${borderColor}`,
-                borderRadius: '8px',
-                backgroundColor: backgroundColor,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '5px',
-                position: 'relative',
-                boxShadow: isWinning ? '0 0 10px rgba(40, 167, 69, 0.5)' :
-                    isFirst ? '0 0 10px rgba(0, 123, 255, 0.5)' :
-                        '0 2px 4px rgba(0,0,0,0.1)'
-            }}>
-                {/* Order indicator */}
-                <div style={{
-                    position: 'absolute',
-                    top: '-8px',
-                    left: '-8px',
-                    width: '20px',
-                    height: '20px',
-                    borderRadius: '50%',
-                    backgroundColor: isFirst ? '#007bff' : isWinning ? '#28a745' : '#6c757d',
-                    color: 'white',
+            <div
+                style={{
+                    ...sizes[size],
+                    border: '3px solid #333',
+                    borderRadius: '12px',
+                    backgroundColor: isValidCard ? '#ffffff' : '#f0f0f0',
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '12px',
-                    fontWeight: 'bold'
-                }}>
-                    {order}
-                </div>
-
-                {/* Suit symbol */}
+                    margin: isInHand ? '0 -15px' : '5px',
+                    position: 'relative',
+                    cursor: isValidCard ? 'pointer' : 'default',
+                    boxShadow: isValidCard ? '0 4px 12px rgba(0,0,0,0.3)' : '0 2px 6px rgba(0,0,0,0.2)',
+                    transition: 'all 0.2s ease',
+                    opacity: isValidCard || !isClickable ? 1 : 0.5,
+                    zIndex: isInHand ? 1 : 'auto'
+                }}
+                onClick={isValidCard ? onClick : undefined}
+                onMouseEnter={isValidCard ? (e) => {
+                    e.currentTarget.style.transform = 'translateY(-20px) scale(1.05)';
+                    e.currentTarget.style.zIndex = '10';
+                } : undefined}
+                onMouseLeave={isValidCard ? (e) => {
+                    e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                    e.currentTarget.style.zIndex = isInHand ? '1' : 'auto';
+                } : undefined}
+            >
                 <div style={{
-                    fontSize: '24px',
+                    fontSize: size === 'large' ? '48px' : size === 'medium' ? '36px' : '24px',
                     color: suitColors[card.suit],
-                    marginBottom: '5px'
+                    marginBottom: '8px'
                 }}>
                     {suitSymbols[card.suit]}
                 </div>
-
-                {/* Card value */}
                 <div style={{
-                    fontSize: '16px',
+                    fontSize: sizes[size].fontSize,
                     fontWeight: 'bold',
                     color: suitColors[card.suit]
                 }}>
                     {card.suit === 'joker' ? 'JOKER' : card.value}
                 </div>
-
-                {/* Player name */}
-                <div style={{
-                    position: 'absolute',
-                    bottom: '-25px',
-                    fontSize: '10px',
-                    color: '#666',
-                    textAlign: 'center',
-                    width: '100%',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                }}>
-                    {playerName}
-                </div>
             </div>
         );
     };
 
-    // Cards Played This Round Component
-    const CardsPlayedDisplay = () => {
-        const winningCard = getWinningCard();
+    // Game Board Component - NEW RECTANGULAR DESIGN
+    const GameBoardWithPath = () => {
+        const suitSymbols = {
+            'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
+            'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
+        };
+        const suitColors = {
+            'spades': '#000000', 'hearts': '#FF0000', 'diamonds': '#FF000',
+            'clubs': '#000000', 'stars': '#FFD700', 'crowns': '#800080'
+        };
+
+        const getPathPositions = () => {
+            const positions = [];
+            const slotWidth = 80;
+            const slotHeight = 60;
+
+            // START position (position 0)
+            positions.push({
+                x: 0,
+                y: 620,
+                position: 0,
+                width: slotWidth,
+                height: slotHeight,
+                isStart: true
+            });
+
+            // Left side going up (positions 1-9)
+            for (let i = 0; i < 9; i++) {
+                positions.push({
+                    x: 0,
+                    y: 560 - (i * slotHeight),
+                    position: i + 1,
+                    width: slotWidth,
+                    height: slotHeight
+                });
+            }
+
+            // Top side going right (positions 10-15)
+            for (let i = 0; i < 6; i++) {
+                positions.push({
+                    x: slotWidth + (i * slotWidth),
+                    y: 80,
+                    position: i + 10,
+                    width: slotWidth,
+                    height: slotHeight
+                });
+            }
+
+            // Right side going down (positions 16-24)
+            for (let i = 0; i < 9; i++) {
+                positions.push({
+                    x: slotWidth * 6,
+                    y: 80 + slotHeight + (i * slotHeight),
+                    position: i + 16,
+                    width: slotWidth,
+                    height: slotHeight
+                });
+            }
+
+            // FINISH position (position 25)
+            positions.push({
+                x: slotWidth * 6,
+                y: 680,
+                position: 25,
+                width: slotWidth,
+                height: slotHeight,
+                isFinish: true
+            });
+
+            return positions;
+        };
+
+        const pathPositions = getPathPositions();
+        const pickSteps = [3, 6, 9, 14, 19, 22];
+        const greenZone = [19, 20, 21, 22, 23, 24, 25];
+
+        // Calculate zig-zag positions for suits
+        const getSuitZigZagPosition = (index) => {
+            const baseY = 100;
+            const verticalSpacing = 90;
+            const horizontalOffset = 60;
+
+            // Zig-zag pattern: left, right, left, right, left, right
+            const isLeft = index % 2 === 0;
+            const row = index;
+
+            return {
+                x: isLeft ? horizontalOffset : 380 - horizontalOffset - 100,
+                y: baseY + (row * verticalSpacing)
+            };
+        };
 
         return (
-            <div style={{marginBottom: '20px'}}>
-                <h3>Cards Played This Round</h3>
+            <div style={{
+                position: 'relative',
+                width: '560px',
+                height: '880px',
+                margin: '0 auto'
+            }}>
+                {/* Central rectangle for suit ranking - UPDATED STYLE */}
                 <div style={{
-                    border: '2px solid #333',
-                    padding: '15px',
-                    minHeight: '160px',
-                    backgroundColor: '#f9f9f9',
-                    borderRadius: '8px'
+                    position: 'absolute',
+                    left: '90px',
+                    top: '150px',
+                    width: '380px',
+                    height: '600px',
+                    border: '4px solid #333',
+                    backgroundColor: '#D2B48C', // Light brown
+                    padding: '30px',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.3)'
                 }}>
-                    {cardsPlayedThisRound.length === 0 ? (
-                        <div style={{
-                            textAlign: 'center',
-                            color: '#666',
-                            fontStyle: 'italic',
-                            paddingTop: '50px'
-                        }}>
-                            No cards played yet this round
-                        </div>
-                    ) : (
-                        <div>
+                    {/* Game Title */}
+                    <h1 style={{
+                        margin: '0 0 40px 0',
+                        textAlign: 'center',
+                        fontSize: '48px',
+                        fontWeight: 'bold',
+                        color: '#333',
+                        fontFamily: 'Georgia, serif',
+                        textShadow: '2px 2px 4px rgba(0,0,0,0.2)'
+                    }}>
+                        VUMPETTI
+                    </h1>
+
+                    {/* Suit Ranking in Zig-Zag */}
+                    <div style={{position: 'relative', height: '450px'}}>
+                        {suitRanking.length === 0 ? (
                             <div style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                justifyContent: 'center',
-                                alignItems: 'flex-start',
-                                gap: '10px',
-                                marginBottom: '30px'
+                                textAlign: 'center',
+                                color: '#666',
+                                fontStyle: 'italic',
+                                paddingTop: '150px',
+                                fontSize: '18px'
                             }}>
-                                {cardsPlayedThisRound.map((cardData, index) => (
-                                    <CardComponent
+                                No ranking yet<br/>All suits equal
+                            </div>
+                        ) : (
+                            suitRanking.map((suit, index) => {
+                                const pos = getSuitZigZagPosition(index);
+                                return (
+                                    <div
                                         key={index}
-                                        card={cardData.card}
-                                        isFirst={index === 0}
-                                        isWinning={winningCard && winningCard.playerId === cardData.playerId && winningCard.order === cardData.order}
-                                        playerName={cardData.playerName}
-                                        order={cardData.order}
-                                    />
-                                ))}
-                            </div>
+                                        style={{
+                                            position: 'absolute',
+                                            left: `${pos.x}px`,
+                                            top: `${pos.y}px`,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '15px'
+                                        }}
+                                    >
+                                        {/* Rank number */}
+                                        <div style={{
+                                            width: '40px',
+                                            height: '40px',
+                                            borderRadius: '50%',
+                                            backgroundColor: '#333',
+                                            color: 'white',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '20px',
+                                            fontWeight: 'bold',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                        }}>
+                                            {index + 1}
+                                        </div>
 
-                            {/* Legend */}
-                            <div style={{
-                                display: 'flex',
-                                justifyContent: 'center',
-                                gap: '20px',
-                                fontSize: '12px',
-                                color: '#666'
-                            }}>
-                                <div style={{display: 'flex', alignItems: 'center'}}>
-                                    <div style={{
-                                        width: '12px',
-                                        height: '12px',
-                                        border: '2px solid #007bff',
-                                        marginRight: '5px',
-                                        backgroundColor: '#e3f2fd'
-                                    }}></div>
-                                    First Card (Lead)
-                                </div>
-                                <div style={{display: 'flex', alignItems: 'center'}}>
-                                    <div style={{
-                                        width: '12px',
-                                        height: '12px',
-                                        border: '2px solid #28a745',
-                                        marginRight: '5px',
-                                        backgroundColor: '#d4edda'
-                                    }}></div>
-                                    Currently Winning
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                                        {/* Suit symbol and name */}
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                                            padding: '8px 15px',
+                                            borderRadius: '8px',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                        }}>
+                                        <span style={{
+                                            fontSize: '32px',
+                                            color: suitColors[suit]
+                                        }}>
+                                            {suitSymbols[suit]}
+                                        </span>
+                                            <span style={{
+                                                fontSize: '20px',
+                                                fontWeight: 'bold',
+                                                color: suitColors[suit],
+                                                textTransform: 'capitalize'
+                                            }}>
+                                            {suit}
+                                        </span>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
                 </div>
-            </div>
-        );
-    };
 
-    // Game Board Component
-    const GameBoard = () => {
-        const boardSize = 24;
-        const pickSteps = [3, 6, 9, 14, 19, 22];
+                {/* Path positions - rectangular slots */}
+                {pathPositions.map((pos) => {
+                    const playersOnSquare = players.filter(p => p.position === pos.position);
+                    const isPickStep = pickSteps.includes(pos.position);
+                    const isGreenZone = greenZone.includes(pos.position);
 
-        const renderBoardSquare = (position) => {
-            const playersOnSquare = players.filter(p => p.position === position);
-            const isPickStep = pickSteps.includes(position);
+                    let backgroundColor = '#fff';
+                    let label = pos.position.toString();
 
-            return (
-                <div
-                    key={position}
-                    style={{
-                        width: '40px',
-                        height: '40px',
-                        border: '2px solid #333',
-                        backgroundColor: isPickStep ? '#FFD700' : '#f0f0f0',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        position: 'relative',
-                        fontSize: '12px',
-                        fontWeight: 'bold'
-                    }}
-                >
-                    {position}
-                    {playersOnSquare.map((player, index) => (
+                    if (pos.isStart) {
+                        backgroundColor = '#4CAF50';
+                        label = 'START';
+                    } else if (pos.isFinish) {
+                        backgroundColor = '#007fff';
+                        label = 'FINISH';
+                    } else if (isGreenZone) {
+                        backgroundColor = isPickStep ? '#FFD700' : '#90EE90';
+                    } else if (isPickStep) {
+                        backgroundColor = '#FFD700';
+                    }
+
+                    return (
                         <div
-                            key={player.id}
+                            key={pos.position}
                             style={{
                                 position: 'absolute',
-                                top: `${-5 + index * 8}px`,
-                                right: `${-5 + index * 8}px`,
-                                width: '12px',
-                                height: '12px',
-                                borderRadius: '50%',
-                                backgroundColor: player.color,
-                                border: '1px solid #000',
-                                fontSize: '8px',
+                                left: `${pos.x}px`,
+                                top: `${pos.y}px`,
+                                width: `${pos.width}px`,
+                                height: `${pos.height}px`,
+                                border: '3px solid #333',
+                                backgroundColor: backgroundColor,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: 'white',
-                                fontWeight: 'bold'
+                                fontSize: pos.isStart || pos.isFinish ? '12px' : '18px',
+                                fontWeight: 'bold',
+                                boxShadow: '0 3px 6px rgba(0,0,0,0.3)',
+                                color: (pos.isStart || pos.isFinish) ? 'white' : '#333'
                             }}
-                            title={player.name}
                         >
-                            {player.name.charAt(0)}
+                            {label}
+                            {playersOnSquare.map((player, index) => (
+                                <div
+                                    key={player.id}
+                                    style={{
+                                        position: 'absolute',
+                                        top: `${5 + index * 15}px`,
+                                        right: `${5 + index * 15}px`,
+                                        width: '38px',
+                                        height: '38px',
+                                        borderRadius: '50%',
+                                        backgroundColor: player.color,
+                                        border: '2px solid #000',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.4)'
+                                    }}
+                                    title={player.name}
+                                >
+                                    {player.name.charAt(0)}
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
-            );
-        };
-
-        return (
-            <div style={{marginBottom: '20px'}}>
-                <h3>Game Board</h3>
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(8, 1fr)',
-                    gap: '2px',
-                    maxWidth: '400px',
-                    margin: '0 auto'
-                }}>
-                    {Array.from({length: boardSize}, (_, i) => renderBoardSquare(i + 1))}
-                </div>
-                <div style={{marginTop: '10px', fontSize: '12px'}}>
-                    <span style={{color: '#FFD700'}}>■</span> Pick Steps (3, 6, 9, 14, 19, 22)
-                    <br/>
-                    <em>Players skip over occupied spaces when moving forward</em>
-                </div>
+                    );
+                })}
             </div>
         );
     };
 
-    // Suit Ranking Component
-    const SuitRankingDisplay = () => {
-        const allSuits = ['spades', 'hearts', 'diamonds', 'clubs', 'stars', 'crowns'];
-        const suitSymbols = {
-            'spades': '♠',
-            'hearts': '♥',
-            'diamonds': '♦',
-            'clubs': '♣',
-            'stars': '⭐',
-            'crowns': '👑'
-        };
+    const MovementChoiceModal = () => {
+        if (!showMovementChoice || !movementChoiceData) return null;
 
         return (
-            <div style={{marginBottom: '20px'}}>
-                <h3>Suit Ranking (Highest to Lowest)</h3>
+            <div style={{
+                position: 'fixed',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000
+            }}>
                 <div style={{
-                    border: '2px solid #333',
-                    padding: '10px',
-                    minHeight: '100px',
-                    backgroundColor: '#f9f9f9'
+                    background: 'white',
+                    border: '3px solid #333',
+                    borderRadius: '10px',
+                    padding: '30px',
+                    maxWidth: '500px',
+                    textAlign: 'center'
                 }}>
-                    {suitRanking.length === 0 ? (
-                        <div style={{
-                            textAlign: 'center',
-                            color: '#666',
-                            fontStyle: 'italic',
-                            paddingTop: '30px'
-                        }}>
-                            No suit ranking yet - all suits are equal
-                        </div>
-                    ) : (
-                        <ol style={{margin: 0, paddingLeft: '20px'}}>
-                            {suitRanking.map((suit, index) => (
-                                <li key={index} style={{
-                                    fontSize: '18px',
-                                    marginBottom: '5px',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                }}>
-                                    <span style={{marginRight: '10px'}}>
-                                        {suitSymbols[suit]} {suit}
-                                    </span>
-                                </li>
+                    <h2>🎯 Green Zone Choice</h2>
+                    <p>You landed in the green zone! Choose your action:</p>
+
+                    <button
+                        onClick={() => handleMovementChoice('forward')}
+                        style={{
+                            padding: '15px 30px',
+                            fontSize: '16px',
+                            backgroundColor: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            margin: '10px',
+                            display: 'block',
+                            width: '100%'
+                        }}
+                    >
+                        Move Forward Yourself
+                    </button>
+
+                    {movementChoiceData.greenZonePlayers && movementChoiceData.greenZonePlayers.length > 0 && (
+                        <div>
+                            <p style={{margin: '20px 0 10px 0', fontSize: '14px', color: '#666'}}>
+                                Or pull someone back one space:
+                            </p>
+                            {movementChoiceData.greenZonePlayers.map(player => (
+                                <button
+                                    key={player.id}
+                                    onClick={() => handleMovementChoice('pullback', player.id)}
+                                    style={{
+                                        padding: '10px 20px',
+                                        fontSize: '14px',
+                                        backgroundColor: '#dc3545',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '5px',
+                                        cursor: 'pointer',
+                                        margin: '5px',
+                                        display: 'block',
+                                        width: '100%'
+                                    }}
+                                >
+                                    Pull {player.name} back (from position {player.position})
+                                </button>
                             ))}
-                        </ol>
+                        </div>
                     )}
                 </div>
             </div>
         );
     };
 
-    // Menu Screen
+    // MENU SCREEN - UNCHANGED
     if (gameState === 'menu') {
         return (
             <div style={{padding: '20px', textAlign: 'center'}}>
                 <h1>VUMPETTI</h1>
-
                 <div style={{marginBottom: '20px'}}>
                     <h3>Your Username:</h3>
                     <input
@@ -661,13 +798,11 @@ function App() {
                     />
                     <button onClick={saveUsername}>Save Username</button>
                 </div>
-
                 <div style={{marginBottom: '20px'}}>
                     <button onClick={createLobby} style={{padding: '10px 20px', margin: '10px'}}>
                         Create Lobby
                     </button>
                 </div>
-
                 <div>
                     <h3>Join Lobby:</h3>
                     <input
@@ -684,155 +819,245 @@ function App() {
         );
     }
 
-    // Lobby Screen
+    // LOBBY SCREEN - UNCHANGED
     if (gameState === 'lobby') {
         return (
             <div style={{padding: '20px'}}>
                 <h1>VUMPETTI - Lobby {lobbyId}</h1>
-
                 <div style={{marginBottom: '20px'}}>
                     <h2>Players in Lobby:</h2>
-                    <ul>
-                        {players.map((player, index) => (
-                            <li key={index} style={{display: 'flex', alignItems: 'center', marginBottom: '5px'}}>
-                                <div
-                                    style={{
-                                        width: '20px',
-                                        height: '20px',
-                                        borderRadius: '50%',
-                                        backgroundColor: player.color,
-                                        marginRight: '10px',
-                                        border: '1px solid #000'
-                                    }}
-                                ></div>
-                                {player.name} {player.id === playerId && "(You)"}
+                    <ul style={{listStyle: 'none', padding: 0}}>
+                        {players.map((player) => (
+                            <li key={player.id} style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                marginBottom: '10px',
+                                padding: '10px',
+                                backgroundColor: '#f8f9fa',
+                                borderRadius: '8px',
+                                border: '1px solid #dee2e6'
+                            }}>
+                                <div style={{
+                                    width: '30px',
+                                    height: '30px',
+                                    borderRadius: '50%',
+                                    backgroundColor: player.color || '#ccc',
+                                    marginRight: '15px',
+                                    border: '2px solid #000',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '12px',
+                                    fontWeight: 'bold',
+                                    color: player.color ? 'white' : '#666'
+                                }}>
+                                    {!player.color && '?'}
+                                </div>
+                                <div style={{flex: 1}}>
+                                    <div style={{fontWeight: 'bold'}}>
+                                        {player.name} {player.id === socket.id && "(You)"}
+                                    </div>
+                                    <div style={{fontSize: '12px', color: '#666'}}>
+                                        {player.colorSelected ? 'Color selected' : 'Selecting color...'}
+                                    </div>
+                                </div>
                             </li>
                         ))}
                     </ul>
                 </div>
 
-                <button onClick={startGame} disabled={players.length < 2}>
-                    Start Game {players.length < 2 && "(Need at least 2 players)"}
+                {!players.find(p => p.id === socket.id)?.colorSelected && (
+                    <div style={{marginBottom: '20px'}}>
+                        <button
+                            onClick={() => setShowColorSelection(true)}
+                            style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#007bff',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '5px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Select Your Color
+                        </button>
+                    </div>
+                )}
+
+                <button
+                    onClick={startGame}
+                    disabled={players.length < 2 || players.some(p => !p.colorSelected)}
+                    style={{
+                        padding: '15px 30px',
+                        fontSize: '16px',
+                        backgroundColor: (players.length >= 2 && players.every(p => p.colorSelected)) ? '#28a745' : '#6c757d',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: (players.length >= 2 && players.every(p => p.colorSelected)) ? 'pointer' : 'not-allowed'
+                    }}
+                >
+                    {players.length < 2 ? "Need at least 2 players" :
+                        players.some(p => !p.colorSelected) ? "Waiting for color selection" :
+                            "Start Game"}
                 </button>
+
+                <ColorSelectionModal/>
             </div>
         );
     }
 
-    // Game Screen
+    // GAME SCREEN - UPDATED WITH NEW PLAYER CARD DISPLAY
     return (
-        <div style={{padding: '20px'}}>
-            <h1>VUMPETTI - Game in Progress</h1>
-
-            {/* Turn Status */}
+        <div style={{
+            width: '100vw',
+            height: '100vh',
+            background: 'linear-gradient(135deg, #1e7e34 0%, #155724 100%)',
+            margin: 0,
+            padding: 0,
+            overflow: 'hidden',
+            position: 'relative'
+        }}>
+            {/* Turn indicator - LEFT SIDE */}
             <div style={{
-                marginBottom: '20px',
-                padding: '15px',
-                backgroundColor: isMyTurn ? '#d4edda' : '#f8d7da',
-                border: '2px solid #333',
-                borderRadius: '5px',
+                position: 'absolute',
+                top: '50%',
+                left: '20px',
+                transform: 'translateY(-50%)',
+                padding: '20px',
+                backgroundColor: isMyTurn ? 'rgba(40, 167, 69, 0.95)' : 'rgba(220, 53, 69, 0.95)',
+                border: '3px solid #fff',
+                borderRadius: '15px',
+                color: 'white',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                zIndex: 100,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                maxWidth: '200px',
                 textAlign: 'center'
             }}>
-                <strong>
-                    {isMyTurn ? "🎯 YOUR TURN - Play a card!" :
-                        `⏳ Waiting for ${players.find(p => p.id === currentPlayer)?.name || 'player'}'s turn`}
-                </strong>
+                {isMyTurn ? "🎯 YOUR TURN" : `⏳ ${players.find(p => p.id === currentPlayer)?.name || 'Player'}'s turn`}
                 {leadSuit && (
-                    <div style={{marginTop: '5px', fontSize: '14px'}}>
-                        Lead suit: <strong>{leadSuit}</strong>
-                        <br/>
-                        <em>{getSuitFollowingMessage()}</em>
+                    <div style={{marginTop: '10px', fontSize: '14px', borderTop: '1px solid white', paddingTop: '10px'}}>
+                        Lead: {leadSuit}
                     </div>
                 )}
             </div>
 
-            <div style={{display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap'}}>
-                <div style={{width: '48%', minWidth: '300px'}}>
-                    <GameBoard/>
+            {/* Game Board - centered */}
+            <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -55%)',
+                zIndex: 1
+            }}>
+                <GameBoardWithPath/>
+            </div>
 
-                    <div style={{marginTop: '20px'}}>
-                        <h3>Players & Positions:</h3>
-                        <ul>
-                            {players.map((player, index) => (
-                                <li key={index} style={{display: 'flex', alignItems: 'center', marginBottom: '5px'}}>
-                                    <div
-                                        style={{
-                                            width: '15px',
-                                            height: '15px',
-                                            borderRadius: '50%',
-                                            backgroundColor: player.color,
-                                            marginRight: '8px',
-                                            border: '1px solid #000'
-                                        }}
-                                    ></div>
-                                    {player.name}: Position {player.position}
-                                    {player.id === playerId && " (You)"}
-                                    {player.id === currentPlayer && " 🎯"}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+            {/* Other players positioned in corners WITH THEIR PLAYED CARDS */}
+            {getRelativePlayerPositions().map(({player, position}) => {
+                const playedCard = cardsPlayedThisRound.find(cp => cp.playerId === player.id);
 
-                    {/* NEW: Cards Played This Round Section */}
-                    <CardsPlayedDisplay/>
-                </div>
+                return (
+                    <div key={player.id} style={{position: 'absolute', ...position, zIndex: 50}}>
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center'
+                        }}>
+                            {/* Player info box */}
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                padding: '15px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                borderRadius: '15px',
+                                border: currentPlayer === player.id ? '3px solid #FFD700' : '2px solid #333',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                marginBottom: '10px'
+                            }}>
+                                <div style={{
+                                    width: '50px',
+                                    height: '50px',
+                                    borderRadius: '50%',
+                                    backgroundColor: player.color,
+                                    border: '3px solid #000',
+                                    marginBottom: '10px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '20px',
+                                    fontWeight: 'bold',
+                                    color: 'white'
+                                }}>
+                                    {player.name.charAt(0)}
+                                </div>
+                                <div style={{fontWeight: 'bold', fontSize: '16px'}}>
+                                    {player.name}
+                                </div>
+                            </div>
 
-                <div style={{width: '48%', minWidth: '300px'}}>
-                    <SuitRankingDisplay/>
-
-                    <div>
-                        <h3>Your Hand ({playerHand.length} cards):</h3>
-                        <div>
-                            {playerHand.map((card, index) => {
-                                const isValidCard = validCards.some(c =>
-                                    c.suit === card.suit && c.value === card.value
-                                );
-                                const canPlay = isMyTurn && isValidCard;
-
-                                return (
-                                    <button
-                                        key={index}
-                                        onClick={() => playCard(card)}
-                                        disabled={!canPlay}
-                                        style={{
-                                            display: 'block',
-                                            margin: '5px 0',
-                                            padding: '8px 12px',
-                                            width: '100%',
-                                            backgroundColor: canPlay ? '#28a745' :
-                                                isMyTurn ? '#ffc107' : '#6c757d',
-                                            color: canPlay ? 'white' :
-                                                isMyTurn ? 'black' : 'white',
-                                            border: canPlay ? '2px solid #1e7e34' :
-                                                isMyTurn ? '2px solid #e0a800' : 'none',
-                                            cursor: canPlay ? 'pointer' : 'not-allowed',
-                                            borderRadius: '4px',
-                                            fontWeight: canPlay ? 'bold' : 'normal'
-                                        }}
-                                    >
-                                        {card.suit === 'joker' ? '🃏 Joker' :
-                                            `${card.suit} ${card.value}`}
-                                    </button>
-                                );
-                            })}
+                            {/* Show played card as separate element below player info */}
+                            {playedCard && (
+                                <CardComponent
+                                    card={playedCard.card}
+                                    size="large"
+                                    isClickable={false}
+                                />
+                            )}
                         </div>
                     </div>
+                );
+            })}
+
+            {/* Current player's played card - shown in center */}
+            {cardsPlayedThisRound.find(cp => cp.playerId === playerId) && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '200px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 150
+                }}>
+                    <CardComponent
+                        card={cardsPlayedThisRound.find(cp => cp.playerId === playerId).card}
+                        size="large"
+                        isClickable={false}
+                    />
                 </div>
+            )}
+
+            {/* Player's hand at bottom - partially hidden */}
+            <div style={{
+                position: 'absolute',
+                bottom: '-50px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'flex-end',
+                zIndex: 200,
+                paddingBottom: '20px'
+            }}>
+                {playerHand.map((card, index) => (
+                    <div key={index} style={{
+                        transition: 'transform 0.2s ease',
+                        zIndex: playerHand.length - index
+                    }}>
+                        <CardComponent
+                            card={card}
+                            size="large"
+                            isClickable={isMyTurn}
+                            onClick={() => playCard(card)}
+                            isInHand={true}
+                        />
+                    </div>
+                ))}
             </div>
 
-            <div style={{marginTop: '20px'}}>
-                <h3>Game Log:</h3>
-                <div style={{
-                    height: '200px',
-                    overflowY: 'scroll',
-                    border: '1px solid #ccc',
-                    padding: '10px',
-                    backgroundColor: '#f9f9f9'
-                }}>
-                    {gameLog.map((entry, index) => (
-                        <div key={index} style={{marginBottom: '2px'}}>{entry}</div>
-                    ))}
-                </div>
-            </div>
+            <ColorSelectionModal/>
+            <MovementChoiceModal/>
 
             {/* Pick Step Modal */}
             {showPickStep && pickStepData && (
@@ -842,7 +1067,7 @@ function App() {
                     left: '0',
                     width: '100%',
                     height: '100%',
-                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    backgroundColor: 'rgba(0,0,0,0.7)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -851,53 +1076,102 @@ function App() {
                     <div style={{
                         background: 'white',
                         border: '3px solid #333',
-                        borderRadius: '10px',
-                        padding: '30px',
-                        maxWidth: '500px',
+                        borderRadius: '15px',
+                        padding: '40px',
+                        maxWidth: '600px',
                         textAlign: 'center'
                     }}>
                         <h2>🎯 Pick Step - Position {pickStepData.position}</h2>
 
                         {pickStepData.canAddSuit ? (
                             <div>
-                                <p><strong>Choose a suit to add to the TOP of the ranking:</strong></p>
-                                <div style={{display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '10px'}}>
+                                <p style={{fontSize: '18px', marginBottom: '20px'}}>
+                                    <strong>Choose a suit to add to the TOP of the ranking:</strong>
+                                </p>
+                                <div style={{display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '15px'}}>
                                     {['spades', 'hearts', 'diamonds', 'clubs', 'stars', 'crowns']
                                         .filter(suit => !suitRanking.includes(suit))
-                                        .map(suit => (
-                                            <button
-                                                key={suit}
-                                                onClick={() => handleSuitRankingUpdate('add', {suit})}
-                                                style={{
-                                                    margin: '5px',
-                                                    padding: '15px 20px',
-                                                    fontSize: '16px',
-                                                    backgroundColor: '#007bff',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '5px',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
-                                                {suit}
-                                            </button>
-                                        ))}
+                                        .map(suit => {
+                                            const suitSymbols = {
+                                                'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
+                                                'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
+                                            };
+                                            const suitColors = {
+                                                'spades': '#000000', 'hearts': '#FF0000', 'diamonds': '#FF0000',
+                                                'clubs': '#000000', 'stars': '#FFD700', 'crowns': '#800080'
+                                            };
+
+                                            return (
+                                                <button
+                                                    key={suit}
+                                                    onClick={() => handleSuitRankingUpdate('add', {suit})}
+                                                    style={{
+                                                        padding: '20px 30px',
+                                                        fontSize: '20px',
+                                                        backgroundColor: '#007bff',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: '10px',
+                                                        cursor: 'pointer',
+                                                        textTransform: 'capitalize',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        gap: '10px',
+                                                        minWidth: '120px'
+                                                    }}
+                                                >
+                                        <span style={{fontSize: '40px'}}>
+                                            {suitSymbols[suit]}
+                                        </span>
+                                                    <span>{suit}</span>
+                                                </button>
+                                            );
+                                        })}
                                 </div>
                             </div>
                         ) : (
                             <div>
-                                <p><strong>Choose two suits to swap positions:</strong></p>
-                                <div style={{marginBottom: '20px'}}>
-                                    <select id="suit1" style={{padding: '10px', margin: '5px', fontSize: '16px'}}>
-                                        {suitRanking.map(suit => (
-                                            <option key={suit} value={suit}>{suit}</option>
-                                        ))}
+                                <p style={{fontSize: '18px', marginBottom: '20px'}}>
+                                    <strong>Choose two suits to swap positions:</strong>
+                                </p>
+                                <div style={{marginBottom: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px'}}>
+                                    <select id="suit1" style={{
+                                        padding: '15px',
+                                        fontSize: '18px',
+                                        borderRadius: '5px',
+                                        border: '2px solid #333'
+                                    }}>
+                                        {suitRanking.map(suit => {
+                                            const suitSymbols = {
+                                                'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
+                                                'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
+                                            };
+                                            return (
+                                                <option key={suit} value={suit}>
+                                                    {suitSymbols[suit]} {suit}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
-                                    <span style={{margin: '0 10px'}}>↔</span>
-                                    <select id="suit2" style={{padding: '10px', margin: '5px', fontSize: '16px'}}>
-                                        {suitRanking.map(suit => (
-                                            <option key={suit} value={suit}>{suit}</option>
-                                        ))}
+                                    <span style={{fontSize: '32px', fontWeight: 'bold'}}>↔</span>
+                                    <select id="suit2" style={{
+                                        padding: '15px',
+                                        fontSize: '18px',
+                                        borderRadius: '5px',
+                                        border: '2px solid #333'
+                                    }}>
+                                        {suitRanking.map(suit => {
+                                            const suitSymbols = {
+                                                'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
+                                                'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
+                                            };
+                                            return (
+                                                <option key={suit} value={suit}>
+                                                    {suitSymbols[suit]} {suit}
+                                                </option>
+                                            );
+                                        })}
                                     </select>
                                 </div>
                                 <button
@@ -907,12 +1181,12 @@ function App() {
                                         handleSuitRankingUpdate('swap', {suit1, suit2});
                                     }}
                                     style={{
-                                        padding: '15px 30px',
-                                        fontSize: '16px',
+                                        padding: '20px 40px',
+                                        fontSize: '20px',
                                         backgroundColor: '#28a745',
                                         color: 'white',
                                         border: 'none',
-                                        borderRadius: '5px',
+                                        borderRadius: '10px',
                                         cursor: 'pointer'
                                     }}
                                 >
