@@ -26,6 +26,7 @@ function App() {
     const [showColorSelection, setShowColorSelection] = useState(false);
     const [selectedColor, setSelectedColor] = useState(null);
     const [gameWinner, setGameWinner] = useState(null);
+    const [lastPlayedCards, setLastPlayedCards] = useState({});
 
     useEffect(() => {
         socket.on("connect", () => {
@@ -80,7 +81,7 @@ function App() {
             setGameState('game');
             setSuitRanking(data.suitRanking);
             setPlayers(data.players);
-            setGameLog(prev => [...prev, "Game started!"]);
+            addToGameLog("Game started!");
         });
 
         socket.on("roundStart", (data) => {
@@ -90,7 +91,7 @@ function App() {
             setTurnOrder(data.turnOrder || []);
             setLeadSuit(null);
             setCardsPlayedThisRound([]);
-            setGameLog(prev => [...prev, data.message]);
+            addToGameLog(data.message);
         });
 
         socket.on("turnUpdate", (data) => {
@@ -104,8 +105,8 @@ function App() {
 
         socket.on("updateHand", (hand) => {
             const sortedHand = sortHandBySuit(hand);
-            setPlayerHand(hand);
-            console.log("Hand updated:", hand);
+            setPlayerHand(sortedHand);
+            console.log("Hand updated and sorted:", sortedHand);
         });
 
         socket.on("pickStep", (data) => {
@@ -123,11 +124,11 @@ function App() {
         });
 
         socket.on("newHandsDealt", () => {
-            setGameLog(prev => [...prev, "New hands dealt!"]);
+            addToGameLog("New hands dealt!");
         });
 
         socket.on("gameWon", ({winnerId, winnerName}) => {
-            setGameLog(prev => [...prev, `🎉 ${winnerName} wins the game! 🎉`]);
+            addToGameLog(`🎉 ${winnerName} wins the game! 🎉`);
             setIsMyTurn(false);
             setGameWinner(winnerName);
         });
@@ -141,6 +142,10 @@ function App() {
         socket.on("colorError", (message) => {
             console.log("❌ [CLIENT] colorError event received:", message);
             alert(message);
+        });
+
+        socket.on("gameLog", (message) => {
+            addToGameLog(message);
         });
 
         socket.onAny((eventName, ...args) => {
@@ -180,27 +185,40 @@ function App() {
                 order: prev.length + 1
             }]);
 
-            setGameLog((prevLog) => [
-                ...prevLog,
-                `${playerName} played ${card.suit} ${card.value || 'Joker'}`,
-            ]);
+            // Show suit symbol in log
+            const suitSymbols = {
+                'spades': '♠', 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣',
+                'stars': '⭐', 'crowns': '👑', 'joker': '🃏'
+            };
+            const cardDisplay = card.suit === 'joker' ? '🃏 Joker' : `${suitSymbols[card.suit]} ${card.value}`;
+
+            addToGameLog(`${playerName}: ${cardDisplay}`);
             setLeadSuit(leadSuit);
         });
 
         socket.on("roundResult", ({cards, winnerId, playerPositions}) => {
             setIsMyTurn(false);
-            const logs = [...gameLog];
+
+            // Store last played cards
+            const lastCards = {};
+            cardsPlayedThisRound.forEach(cp => {
+                lastCards[cp.playerId] = cp.card;
+            });
+            setLastPlayedCards(lastCards);
+
             if (winnerId) {
                 const winner = players.find(p => p.id === winnerId);
                 const winnerName = winner ? winner.name : winnerId;
-                logs.push(`🏆 ${winnerName} wins the round!`);
+                addToGameLog(`🏆 ${winnerName} wins the round!`);
             } else {
-                logs.push("The round is a tie!");
+                addToGameLog("The round is a tie!");
             }
-            setGameLog(logs);
             setPlayers(playerPositions);
+
             setTimeout(() => {
                 setCardsPlayedThisRound([]);
+                // Clear last played cards after showing them
+                setTimeout(() => setLastPlayedCards({}), 2000);
             }, 3000);
         });
 
@@ -280,6 +298,13 @@ function App() {
         );
     };
 
+    const addToGameLog = (message) => {
+        setGameLog(prev => {
+            const newLog = [...prev, message];
+            return newLog.slice(-10); // Keep only last 10 entries
+        });
+    };
+
     const createLobby = () => {
         socket.emit("createLobby");
     };
@@ -314,6 +339,10 @@ function App() {
             return;
         }
         socket.emit("playCard", {card});
+
+        // Immediately update local hand (will be confirmed by server)
+        const newHand = playerHand.filter(c => !(c.suit === card.suit && c.value === card.value));
+        setPlayerHand(sortHandBySuit(newHand));
     };
 
 
@@ -326,7 +355,7 @@ function App() {
             if (suitCompare !== 0) return suitCompare;
 
             // Then by value within same suit
-            if (a.value === null) return 1; // Jokers last
+            if (a.value === null) return 1;
             if (b.value === null) return -1;
             return a.value - b.value;
         });
@@ -343,48 +372,71 @@ function App() {
     };
 
     // Helper function to get relative player positions for game screen
-    const getRelativePlayerPositions = () => {
-        if (!playerId || players.length === 0) return [];
-        const myIndex = players.findIndex(p => p.id === playerId);
-        if (myIndex === -1) return [];
+    {/* Other players positioned in corners */}
+    {getRelativePlayerPositions().map(({player, position}) => {
+        const playedCard = cardsPlayedThisRound.find(cp => cp.playerId === player.id);
+        const lastCard = lastPlayedCards[player.id];
 
-        const positions = [];
-        const totalPlayers = players.length;
+        return (
+            <div key={player.id} style={{position: 'absolute', ...position, zIndex: 50}}>
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center'
+                }}>
+                    {/* Player info box */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        padding: '15px',
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        borderRadius: '15px',
+                        border: currentPlayer === player.id ? '3px solid #FFD700' : '2px solid #333',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        marginBottom: '10px'
+                    }}>
+                        <div style={{
+                            width: '50px',
+                            height: '50px',
+                            borderRadius: '50%',
+                            backgroundColor: player.color,
+                            border: '3px solid #000',
+                            marginBottom: '10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '20px',
+                            fontWeight: 'bold',
+                            color: 'white'
+                        }}>
+                            {player.name.charAt(0)}
+                        </div>
+                        <div style={{fontWeight: 'bold', fontSize: '16px'}}>
+                            {player.name}
+                        </div>
+                    </div>
 
-        // Position layouts - all in corners, away from game board
-        const positionLayouts = {
-            2: [
-                {top: '20px', left: '20px'}, // Top left
-            ],
-            3: [
-                {top: '20px', left: '20px'}, // Top left
-                {top: '20px', right: '20px'}, // Top right
-            ],
-            4: [
-                {top: '20px', left: '20px'}, // Top left
-                {top: '20px', right: '20px'}, // Top right
-                {bottom: '220px', left: '20px'}, // Bottom left
-            ],
-            5: [
-                {top: '20px', left: '20px'}, // Top left
-                {top: '20px', right: '20px'}, // Top right
-                {bottom: '220px', left: '20px'}, // Bottom left
-                {bottom: '220px', right: '20px'}, // Bottom right
-            ]
-        };
-
-        const layout = positionLayouts[totalPlayers] || positionLayouts[5];
-
-        for (let i = 1; i < totalPlayers; i++) {
-            const playerIndex = (myIndex + i) % totalPlayers;
-            positions.push({
-                player: players[playerIndex],
-                position: layout[i - 1]
-            });
-        }
-
-        return positions;
-    };
+                    {/* Show current played card OR last played card (dimmed) */}
+                    {playedCard ? (
+                        <CardComponent
+                            card={playedCard.card}
+                            size="large"
+                            isClickable={false}
+                        />
+                    ) : lastCard ? (
+                        <div style={{opacity: 0.4}}>
+                            <CardComponent
+                                card={lastCard}
+                                size="medium"
+                                isClickable={false}
+                            />
+                        </div>
+                    ) : null}
+                </div>
+            </div>
+        );
+    })}
 
     // Card Component for game screen
     const CardComponent = ({card, size = 'large', isClickable = false, onClick, isInHand = false}) => {
@@ -1189,10 +1241,6 @@ function App() {
                                                 'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
                                                 'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
                                             };
-                                            const suitColors = {
-                                                'spades': '#000000', 'hearts': '#FF0000', 'diamonds': '#FF0000',
-                                                'clubs': '#000000', 'stars': '#FFD700', 'crowns': '#800080'
-                                            };
 
                                             return (
                                                 <button
@@ -1235,12 +1283,15 @@ function App() {
                                     justifyContent: 'center',
                                     gap: '20px'
                                 }}>
-                                    <select id="suit1" style={{
-                                        padding: '15px',
-                                        fontSize: '18px',
-                                        borderRadius: '5px',
-                                        border: '2px solid #333'
-                                    }}>
+                                    <select
+                                        id="suit1"
+                                        style={{
+                                            padding: '15px',
+                                            fontSize: '18px',
+                                            borderRadius: '5px',
+                                            border: '2px solid #333'
+                                        }}
+                                    >
                                         {suitRanking.map((suit, index) => {
                                             const suitSymbols = {
                                                 'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
@@ -1253,32 +1304,18 @@ function App() {
                                             );
                                         })}
                                     </select>
+
                                     <span style={{fontSize: '32px', fontWeight: 'bold'}}>↔</span>
-                                    <select id="suit1" style={{
-                                        padding: '15px',
-                                        fontSize: '18px',
-                                        borderRadius: '5px',
-                                        border: '2px solid #333'
-                                    }}>
-                                        {suitRanking.map((suit, index) => {
-                                            const suitSymbols = {
-                                                'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
-                                                'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
-                                            };
-                                            return (
-                                                <option key={suit} value={suit}>
-                                                    {index + 1}. {suitSymbols[suit]} {suit}
-                                                </option>
-                                            );
-                                        })}
-                                    </select>
-                                    <span style={{fontSize: '32px', fontWeight: 'bold'}}>↔</span>
-                                    <select id="suit2" style={{
-                                        padding: '15px',
-                                        fontSize: '18px',
-                                        borderRadius: '5px',
-                                        border: '2px solid #333'
-                                    }}>
+
+                                    <select
+                                        id="suit2"
+                                        style={{
+                                            padding: '15px',
+                                            fontSize: '18px',
+                                            borderRadius: '5px',
+                                            border: '2px solid #333'
+                                        }}
+                                    >
                                         {suitRanking.map((suit, index) => {
                                             const suitSymbols = {
                                                 'spades': '♠', 'hearts': '♥', 'diamonds': '♦',
@@ -1315,6 +1352,7 @@ function App() {
                     </div>
                 </div>
             )}
+
             <div style={{
                 position: 'absolute',
                 top: '50%',
