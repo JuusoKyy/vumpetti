@@ -27,7 +27,7 @@ function generateRoomId() {
 // Create a deck of cards
 function createDeck() {
     const suits = ['spades', 'hearts', 'diamonds', 'clubs', 'stars', 'crowns'];
-    const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+    const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
     const deck = [];
 
     // Add regular cards
@@ -64,7 +64,7 @@ function dealCardsFromDeck(room, numCards = 7) {
     if (!room.currentDeck || room.currentDeck.length < cardsNeeded) {
         console.log(`[0] Creating new deck - needed: ${cardsNeeded}, available: ${room.currentDeck ? room.currentDeck.length : 0}`);
         room.currentDeck = shuffle(createDeck());
-        room.isNewShuffle = true; // Flag to track if this is a new shuffle
+        room.isNewShuffle = true;
     } else {
         room.isNewShuffle = false;
     }
