@@ -2,24 +2,10 @@
   "name": "vumpetti",
   "version": "1.0.0",
   "description": "Vumpetti card game",
-  "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js",
-    "client": "cd client && npm start",
-    "dev": "concurrently \"npm run start\" \"npm run client\"",
-    "install-all": "npm install && cd client && npm install",
-    "build": "cd client && npm run build"
+    "install-all": "npm install && cd client && npm install && cd ../server && npm install"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "mongoose": "^8.16.1",
-    "socket.io": "^4.8.1"
-  },
-  "devDependencies": {
-    "concurrently": "^9.2.0"
-  }
+  "license": "ISC"
 }
