@@ -25,6 +25,7 @@ function App() {
     const [availableColors] = useState(['#000000', '#FF0000', '#0000FF', '#FFFF00', '#FFFFFF', '#008000']);
     const [showColorSelection, setShowColorSelection] = useState(false);
     const [selectedColor, setSelectedColor] = useState(null);
+    const [gameWinner, setGameWinner] = useState(null);
 
     useEffect(() => {
         socket.on("connect", () => {
@@ -93,6 +94,8 @@ function App() {
         });
 
         socket.on("turnUpdate", (data) => {
+            console.log("Turn update received:", data); // Debug
+            console.log("Current players:", players); // Debug
             setIsMyTurn(data.isYourTurn);
             setCurrentPlayer(data.currentPlayer);
             setValidCards(data.validCards || []);
@@ -125,6 +128,7 @@ function App() {
         socket.on("gameWon", ({winnerId, winnerName}) => {
             setGameLog(prev => [...prev, `🎉 ${winnerName} wins the game! 🎉`]);
             setIsMyTurn(false);
+            setGameWinner(winnerName);
         });
 
         socket.on("colorSelected", (color) => {
@@ -439,7 +443,7 @@ function App() {
             'clubs': '♣', 'stars': '⭐', 'crowns': '👑'
         };
         const suitColors = {
-            'spades': '#000000', 'hearts': '#FF0000', 'diamonds': '#FF000',
+            'spades': '#000000', 'hearts': '#FF0000', 'diamonds': '#FF0000',
             'clubs': '#000000', 'stars': '#FFD700', 'crowns': '#800080'
         };
 
@@ -906,6 +910,76 @@ function App() {
             </div>
         );
     }
+    // Game Over Modal
+    const GameOverModal = () => {
+        if (!gameWinner) return null;
+
+        return (
+            <div style={{
+                position: 'fixed',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 3000
+            }}>
+                <div style={{
+                    background: 'white',
+                    border: '5px solid gold',
+                    borderRadius: '20px',
+                    padding: '50px',
+                    textAlign: 'center',
+                    maxWidth: '500px'
+                }}>
+                    <h1 style={{fontSize: '48px', marginBottom: '20px'}}>🎉 GAME OVER! 🎉</h1>
+                    <h2 style={{fontSize: '36px', marginBottom: '30px', color: '#FFD700'}}>
+                        {gameWinner} WINS!
+                    </h2>
+
+                    <button
+                        onClick={() => {
+                            setGameWinner(null);
+                            setGameState('menu');
+                            window.location.reload(); // Reload to reset everything
+                        }}
+                        style={{
+                            padding: '20px 40px',
+                            fontSize: '20px',
+                            backgroundColor: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            marginRight: '10px'
+                        }}
+                    >
+                        Back to Menu
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            window.location.reload(); // Quick restart
+                        }}
+                        style={{
+                            padding: '20px 40px',
+                            fontSize: '20px',
+                            backgroundColor: '#007bff',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '10px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Play Again
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     // GAME SCREEN - UPDATED WITH NEW PLAYER CARD DISPLAY
     return (
@@ -1058,12 +1132,13 @@ function App() {
 
             <ColorSelectionModal/>
             <MovementChoiceModal/>
+            <GameOverModal/>
 
             {/* Pick Step Modal */}
             {showPickStep && pickStepData && (
                 <div style={{
                     position: 'fixed',
-                    top: '0',
+                    top: '',
                     left: '0',
                     width: '100%',
                     height: '100%',
@@ -1071,7 +1146,7 @@ function App() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 1000
+                    zIndex: 2000
                 }}>
                     <div style={{
                         background: 'white',
@@ -1135,7 +1210,13 @@ function App() {
                                 <p style={{fontSize: '18px', marginBottom: '20px'}}>
                                     <strong>Choose two suits to swap positions:</strong>
                                 </p>
-                                <div style={{marginBottom: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px'}}>
+                                <div style={{
+                                    marginBottom: '30px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '20px'
+                                }}>
                                     <select id="suit1" style={{
                                         padding: '15px',
                                         fontSize: '18px',
