@@ -361,7 +361,7 @@ function processRoundEnd(room) {
             console.log(`[0] Player ${winner.name} moved to position ${newPosition}`);
 
             // Check if winner landed in green zone (positions 19-25)
-            if (isInGreenZone(newPosition)) {
+            /*if (isInGreenZone(newPosition)) {
                 const otherGreenZonePlayers = room.players.filter(p =>
                     p.id !== winnerId && isInGreenZone(p.position)
                 );
@@ -382,7 +382,7 @@ function processRoundEnd(room) {
                     });
                     return; // Wait for movement choice
                 }
-            }
+            }*/
         }
     }
 

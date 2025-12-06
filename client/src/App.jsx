@@ -800,8 +800,8 @@ function App() {
                     >
                         Move Forward Yourself
                     </button>
-
-                    {movementChoiceData.greenZonePlayers && movementChoiceData.greenZonePlayers.length > 0 && (
+                    
+                    {/* {movementChoiceData.greenZonePlayers && movementChoiceData.greenZonePlayers.length > 0 && (
                         <div>
                             <p style={{margin: '20px 0 10px 0', fontSize: '14px', color: '#666'}}>
                                 Or pull someone back one space:
@@ -827,7 +827,7 @@ function App() {
                                 </button>
                             ))}
                         </div>
-                    )}
+                    )} */}
                 </div>
             </div>
         );
