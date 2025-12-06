@@ -37,8 +37,8 @@ function createDeck() {
         }
     }
 
-    // Add 6 jokers
-    for (let i = 0; i < 6; i++) {
+    // Add 3 jokers
+    for (let i = 0; i < 3; i++) {
         deck.push({suit: 'joker', value: null});
     }
 
